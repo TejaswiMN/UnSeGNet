@@ -75,7 +75,7 @@ class Segmentation:
                 S = S.detach().cpu()
                 S = torch.argmax(S, dim=-1)
                 
-            segmentation = util.zgraph_to_mask(S, image_tensor, image)
+            segmentation = util.graph_to_mask(S, image_tensor, image)
 
         if self.bs:
             segmentation = bilateral_solver_output(image, segmentation)[1]

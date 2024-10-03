@@ -21,6 +21,7 @@ class GNNpool(nn.Module):
         self.activ = activ
         self.num_clusters = num_clusters
         self.mlp_hidden = mlp_hidden
+        self.convtype = conv_type
         if loss_type not in ["DMON", "NCUT"]:
             raise ValueError(f'Loss type: {loss_type} is not supported')
         self.loss_type = loss_type
@@ -54,6 +55,12 @@ class GNNpool(nn.Module):
                 dropout=0.4,shared_weights=False)
         elif conv_type == "GCN":
             self.convs = pyg_nn.GCN(input_dim, conv_hidden, 1, act=act)
+        elif conv_type == "GAT":
+            self.convs1 = pyg_nn.GCN(input_dim, 64, 1, act=act)
+            self.convs2 = pyg_nn.GATConv(64, 32, heads=2, concat=True, dropout=0.4, negative_slope=0.2)
+            # self.convs3 = pyg_nn.GCN(128, conv_hidden, 1, act=act)
+            self.convs3 = pyg_nn.GCN(64, conv_hidden, 1, act=act)
+
         else:
             raise ValueError("Conv type not supported")
 
@@ -70,7 +77,12 @@ class GNNpool(nn.Module):
         @return: Adjacency matrix of the graph and pooled graph (argmax of S)
         """
         x, edge_index, edge_atrr = data.x, data.edge_index, data.edge_attr
-        x = self.convs(x, edge_index, edge_atrr)  # applying con5v
+        if self.convtype == "GAT":
+            x = self.convs1(x, edge_index, edge_atrr)
+            x = self.convs2(x, edge_index, edge_atrr)
+            x = self.convs3(x, edge_index, edge_atrr)
+        else:
+            x = self.convs(x, edge_index, edge_atrr)  # applying con5v
         x = self.f_act(x)
 
         # pass feats through mlp
