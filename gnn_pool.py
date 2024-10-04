@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
-
+# self.model = GNNpool(self.feats_dim, 64, 32, 2, self.device, activation, loss_type, conv_type).to(self.device)
 
 class GNNpool(nn.Module):
     def __init__(self, input_dim, conv_hidden, mlp_hidden, num_clusters, device, activ="silu", loss_type="DMON", conv_type="ARMA"):

@@ -84,12 +84,15 @@ class Segmentation:
         
         iou1 = Segmentation.iou(segmentation, mask)
         iou2 = Segmentation.iou(1-segmentation, mask)
+        maxIoU = iou1
+
         if iou2 > iou1:
             segmentation = 1 - segmentation
+            maxIoU = iou2
 
         segmentation_over_image  = util.apply_seg_map(image, segmentation, 0.1)
 
-        return max(iou1, iou2), segmentation, segmentation_over_image
+        return maxIoU, segmentation, segmentation_over_image
 
     def medsam_inference(self, image, mask):
         """
