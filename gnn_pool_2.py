@@ -66,7 +66,7 @@ class GNNpool(nn.Module):
             self.convs2 = pyg_nn.GATConv(128, 64, heads=3, concat=False, dropout=0.4, negative_slope=0.2)
         elif conv_type == "EnsembleGAT":
             self.num_layers = 3
-            self.gat_layers = nn.ModuleList([   
+            self.gat_layers = nn.ModuleList([
                 pyg_nn.GATConv(input_dim, conv_hidden, heads=2, concat=False, dropout=0.4, negative_slope=0.2) for _ in range(self.num_layers)
             ])
             self.final_linear = nn.Linear(conv_hidden * self.num_layers, conv_hidden)

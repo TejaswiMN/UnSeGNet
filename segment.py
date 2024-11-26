@@ -16,7 +16,7 @@ from gnn_pool import GNNpool
 from transformers import SamModel, SamProcessor
 
 class Segmentation:
-    def __init__(self, process, bs=False, epochs=20, resolution=(224, 224), activation=None, loss_type=None, threshold=None, conv_type=None):
+    def __init__(self, process, bs=False, epochs=20, resolution=(224, 224), activation=None, loss_type=None, threshold=None, conv_type=None, seg_type=None):
         if process not in ["KMEANS_DINO", "DINO", "MEDSAM_INFERENCE"]:
             raise ValueError(f'Process: {process} is not supported')
         self.process = process
@@ -26,6 +26,7 @@ class Segmentation:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.loss_type = loss_type
         self.threshold = threshold
+        self.seg_type = seg_type
         if process in ["DINO", "KMEANS_DINO"]:
             self.feats_dim = 384
             pretrained_weights = './dino_deitsmall8_pretrain_full_checkpoint.pth'
@@ -40,6 +41,54 @@ class Segmentation:
         torch.save(self.model.state_dict(), 'model.pt')
         self.model.train()
 
+    def segment2(self, image, mask): # not using this
+    #     """
+    #     @param image: Image to segment (numpy array)
+    #     @param mask: Ground truth mask (binary numpy array)
+    #     """
+    #     if self.process == "MEDSAM_INFERENCE":
+    #         medsam_seg = self.medsam_inference(image, mask)
+    #         segmentation = cv2.resize(medsam_seg.astype('float'), (image[:, :, 0].shape[1], image[:, :, 0].shape[0]), interpolation=cv2.INTER_NEAREST)
+    #     else:
+    #         image_tensor, image = util.load_data_img(image, self.resolution)
+    #         if self.process in ["DINO", "KMEANS_DINO"]:
+    #             F = deep_features(image_tensor, self.extractor, device=self.device)
+
+    #         if self.process == "KMEANS_DINO":
+    #             kmeans = KMeans(n_clusters=2, random_state = 42)
+    #             kmeans.fit(F)
+    #             labels = kmeans.labels_
+    #             S = torch.tensor(labels)
+    #         else:
+    #             W = util.create_adj(F, self.loss_type, self.threshold)
+    #             node_feats, edge_index, edge_weight = util.load_data(W, F)
+    #             data = Data(node_feats, edge_index, edge_weight).to(self.device)
+    #             self.model.load_state_dict(torch.load('./model.pt', map_location=self.device))
+    #             opt = optim.AdamW(self.model.parameters(), lr=0.001)
+
+    #             for _ in range(self.epochs):
+    #                 opt.zero_grad()
+    #                 A, S = self.model(data, torch.from_numpy(W).to(self.device))
+    #                 loss = self.model.loss(A, S)
+    #                 loss.backward()
+    #                 opt.step()
+
+    #             S = S.detach().cpu()
+    #             S = torch.argmax(S, dim=-1)
+                
+    #         segmentation = util.graph_to_mask(S, image_tensor, image)
+
+    #     if self.bs:
+    #         segmentation = bilateral_solver_output(image, segmentation)[1]
+        
+    #     segmentation = np.where(segmentation==True, 1,0).astype(np.uint8)  
+        
+    #     iou = Segmentation.iou(segmentation, mask)
+    #     segmentation_over_image  = util.apply_seg_map(image, segmentation, 0.1)
+
+    #     return iou, segmentation, segmentation_over_image
+        pass
+
     def segment(self, image, mask):
         """
         @param image: Image to segment (numpy array)
@@ -47,14 +96,17 @@ class Segmentation:
         """
         if self.process == "MEDSAM_INFERENCE":
             medsam_seg = self.medsam_inference(image, mask)
-            segmentation = cv2.resize(medsam_seg.astype('float'), (image[:, :, 0].shape[1], image[:, :, 0].shape[0]), interpolation=cv2.INTER_NEAREST)
+            segmentation = cv2.resize(medsam_seg.astype('float'), 
+                                    (image[:, :, 0].shape[1], 
+                                        image[:, :, 0].shape[0]), 
+                                    interpolation=cv2.INTER_NEAREST)
         else:
             image_tensor, image = util.load_data_img(image, self.resolution)
             if self.process in ["DINO", "KMEANS_DINO"]:
                 F = deep_features(image_tensor, self.extractor, device=self.device)
 
             if self.process == "KMEANS_DINO":
-                kmeans = KMeans(n_clusters=2, random_state = 42)
+                kmeans = KMeans(n_clusters=2, random_state=42)
                 kmeans.fit(F)
                 labels = kmeans.labels_
                 S = torch.tensor(labels)
@@ -74,25 +126,60 @@ class Segmentation:
 
                 S = S.detach().cpu()
                 S = torch.argmax(S, dim=-1)
-                
+
             segmentation = util.graph_to_mask(S, image_tensor, image)
 
         if self.bs:
             segmentation = bilateral_solver_output(image, segmentation)[1]
-        
-        segmentation = np.where(segmentation==True, 1,0).astype(np.uint8)  
-        
-        iou1 = Segmentation.iou(segmentation, mask)
-        iou2 = Segmentation.iou(1-segmentation, mask)
-        maxIoU = iou1
 
-        if iou2 > iou1:
-            segmentation = 1 - segmentation
-            maxIoU = iou2
+        segmentation = np.where(segmentation == True, 1, 0).astype(np.uint8)
 
-        segmentation_over_image  = util.apply_seg_map(image, segmentation, 0.1)
+        # if self.seg_type == "simple":
+        #     iou1 = Segmentation.iou(segmentation, mask)
+        #     segmentation_over_image  = util.apply_seg_map(image, segmentation, 0.1)
+        #     return iou1, segmentation, segmentation_over_image
 
-        return maxIoU, segmentation, segmentation_over_image
+        # Calculate IoU for all segments
+        unique_segments = np.unique(segmentation)        
+        best_iou = 0
+        best_segment_id = None
+        is_inverted = False  # Flag to indicate if the best segment is inverted
+
+        for segment_id in unique_segments:
+            if segment_id == 0:  # Skip background
+                continue
+            segment_mask = (segmentation == segment_id).astype(np.uint8)
+            iou = Segmentation.iou(segment_mask, mask)
+
+            # Check for inverted mask
+            inverted_mask = (segment_mask == 0).astype(np.uint8)
+            inverted_iou = Segmentation.iou(inverted_mask, mask)
+            print ("All ious: ", iou, inverted_iou)
+
+            # Use the maximum IoU from both normal and inverted
+            if iou > inverted_iou:
+                max_iou = iou
+                current_segment_id = segment_id
+                current_is_inverted = False
+            else:
+                max_iou = inverted_iou
+                current_segment_id = segment_id
+                current_is_inverted = True
+
+            # Update best IoU and segment ID
+            if max_iou > best_iou:
+                best_iou = max_iou
+                best_segment_id = current_segment_id
+                is_inverted = current_is_inverted  # Track if the best segment is inverted
+
+        # Create mask for best segment
+        best_segment_mask = (segmentation == best_segment_id).astype(np.uint8)
+        if is_inverted:  # If the best segment is inverted
+            best_segment_mask = (best_segment_mask == 0).astype(np.uint8)  # Invert the mask
+        segmentation_over_image = util.apply_seg_map(image, best_segment_mask, 0.1)
+
+        return best_iou, best_segment_mask, segmentation_over_image
+
 
     def medsam_inference(self, image, mask):
         """

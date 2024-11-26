@@ -172,6 +172,7 @@ datasets/
 
 CVC-ClinicDB_2/
 
-*.pt 
-# .pt/
+model.pt
+*.pt
+.pt/
 

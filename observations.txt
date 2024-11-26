@@ -1,0 +1,2 @@
+6 attention heads - bad
+kmeans dino - v fast
